@@ -71,10 +71,25 @@ Gom file nhỏ thành file lớn
 
 
 ## Catalog
-Catalog là nơi quản lý metadata (cuốn sổ ghi lại cấch tổ chức file)
+Catalog là nơi quản lý metadata (cuốn sổ ghi lại cách tổ chức file)
 Nó lưu
 - Table có tồn tại ko?
-- schema
-- partition
-- snapshot
 - Table nằm ở đâu
+
+```sql
+SELECT *
+FROM my_catalog.iceberg_book.orders.metadata_log_entries
+ORDER BY timestamp DESC
+LIMIT 1
+```
+Metadata file hiện tại của table là file nào?
+Kết quả trả về: s3://.../metadata/00002-....metadata.json
+
+
+## Puffin file
+Puffin file là metadata nâng cao, lưu các thống kê và index nhẹ ở mức data file, giúp query engine quyết định bỏ qua những file không thỏa điều kiện (file pruning).
+VD: Có bao nhiêu cuốn sách
+    - Ko puffin: Mở metadata -> manifest list -> manifest files -> data file -> Count Distinct
+    - Có puffin: Đọc tờ ghi chú (puffin)
+        → bỏ qua các file không liên quan
+        → chỉ đọc những file cần thiết
