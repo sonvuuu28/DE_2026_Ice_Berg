@@ -69,7 +69,6 @@ Hidden Partition quản lý hồ sơ bằng metadata nếu đổi cách lưu vi�
 ## Data Compaction
 Gom file nhỏ thành file lớn
 
-
 ## Catalog
 Catalog là nơi quản lý metadata (cuốn sổ ghi lại cách tổ chức file)
 Nó lưu
@@ -81,6 +80,11 @@ SELECT *
 FROM my_catalog.iceberg_book.orders.metadata_log_entries
 ORDER BY timestamp DESC
 LIMIT 1
+
+SELECT *
+FROM demo.db.orders.metadata_log_entries
+ORDER BY timestamp DESC
+LIMIT 1;
 ```
 Metadata file hiện tại của table là file nào?
 Kết quả trả về: s3://.../metadata/00002-....metadata.json
