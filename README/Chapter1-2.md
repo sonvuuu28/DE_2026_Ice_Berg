@@ -60,10 +60,8 @@ VD: row #234 nghĩa là dòng 235
     ![alt text](images/1.png)
 
 
-## Hidden Partition vs Partition
-Partition bình thường sẽ chia dữ liệu theo các ngăn kéo trong kho. Khi đổi phương thức lưu trữ (Từ ngăn kéo theo ngày thành ngăn theo tháng) sẽ phải lôi  hết hồ sơ ra sắp vô tủ tháng => REWRITE
-
-Hidden Partition quản lý hồ sơ bằng metadata nếu đổi cách lưu viết lại sổ mới ko phải sắp xếp nữa => ko bị REWRITE
+## Hidden Partition
+user query ko cần phải viết hẳn cột PARTITIONED ra mà Ice Berg sẽ tự suy ra => end user ko cần tech quá.
 
 
 ## Data Compaction

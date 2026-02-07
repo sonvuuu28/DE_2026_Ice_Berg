@@ -1,4 +1,12 @@
 # Optimizing the Performance
+
+## 📖 Table of Contents
+1. [I. Compaction](#i-compaction)  
+2. [IV. File Size & Row Group Size của parquet](#iv-file-size--row-group-size)  
+3. [V. Partial Progress](#v-partial-progress)  
+4. [VII. Hidden Partition](#vii-hidden-partition)  
+5. [VIII. Partition Evolution](#viii-partition-evolution)
+
 ## I. Compaction
 Gom các data files nhỏ về 1 file lớn để giảm thiểu thao tác đọc, mở, đóng.
 ![alt text](images/6.png)
@@ -9,6 +17,10 @@ Gom các data files nhỏ về 1 file lớn để giảm thiểu thao tác đọ
 - Target file size ~ 1GB
 - Bật partial progress commit
 - Có thể kết hợp airflow để auto compaction
+
+**Quick Note for Batching Tasks:**
+- Sort data rồi mới insert
+- Áp dụng strategy sort/z-order phụ thuộc vào xu hướng query cảu end user.
 
 ![alt text](images/chap4_3.png)
 
@@ -47,12 +59,18 @@ rồi tới (1,3),(2,3)...
 | Các loại compaction | Cách thức | Ưu điểm | Nhược điểm |
 |---------------------|-----------|---------|------------|
 | binpack | Gom các file nhỏ thuần | Nhanh gọn lẹ => hợp streaming | Ko tối ưu cho heavy query |
-| Sort | Sort từng cột từng cột, rồi mới gom file | Phù hợp cho heavy query 1 cột | Quá trình gom mất thời gian |
-| Z-Order | Sort zigzag | Cực phù hợp cho heavy query nhiều cột | Quá trình gom mất thời gian hơn cả Sort |
+| Sort | Sort từng cột từng cột, rồi mới gom file | Phù hợp cho heavy query | Quá trình gom mất thời gian |
+| Z-Order | Sort zigzag | Phù hợp cho heavy query | Quá trình gom mất thời gian hơn cả Sort |
 
 Z-Order sẽ sort như sau: (1,1), (1,2), (2,1), (2,2), rồi mới tới (1,3), (2,3),...
 
+![alt text](images/chap4_4.png)
 
+Nếu hỏi "Tất cả cầu thủ của đội Lions có tên bắt đầu bằng chữ A" thì sort ok nhất
+
+Nếu hỏi "Tất cả cầu thủ của NLF có tên bắt đầu bằng chữ A" thì z-Order ok nhất (nếu sort dành cho câu này, data row nằm rải rác các file có thể quét hết file)
+
+=> Dựa vào xu hướng hỏi để tổ chức đata.
 
 ---
 
@@ -169,4 +187,122 @@ CALL catalog.system.rewrite_data_files(
 - max-file-group-size-bytes         : group file max kích thước 
 
 
-## VII. 
+```sql
+CALL catalog.system.rewrite_data_files(
+    table => 'nfl_teams',
+    strategy => 'sort',
+    sort_order => 'team ASC NULLS LAST, name ASC NULLS FIRST'
+)
+```
+
+
+```sql
+CALL catalog.system.rewrite_data_files(
+    table => 'people',
+    strategy => 'sort',
+    sort_order => 'zorder(age,height)'
+)  
+```
+
+
+## VII. Hidden Partition
+
+Có **3** loại:
+
+* TIME (`day`, `month`, `year`, `hour`)
+* Truncate
+* Bucket
+
+---
+
+#### 1. Time
+
+Khi table được partition theo `month/year/day` trên cột timestamp.
+
+Khi end user query:
+
+```sql
+WHERE timestamp ...
+```
+
+Iceberg sẽ:
+
+* Dựa vào metadata (manifest) để loại bỏ các manifest file không nằm trong khoảng thời gian cần tìm
+* Sau đó mới scan dữ liệu chi tiết
+
+---
+
+#### 2. Truncate
+
+Partition theo n ký tự (prefix) của cột.
+Phù hợp cho các trường như `name`.
+
+---
+
+#### 3. Bucket
+
+* Partition table thành n bucket (xô).
+* Nên chọn cột có cardinality cao.
+* Áp dụng hash + modulo.
+
+```sql
+PARTITIONED BY bucket(n, user_id)
+```
+
+**Ví dụ**
+User query:
+
+```sql
+WHERE user_id = X
+```
+
+Iceberg sẽ:
+
+```
+bucket_id = hash(user_id) % n
+```
+
+→ Chỉ quét 1 bucket, không quét `n-1` bucket còn lại.
+
+---
+
+
+## VIII. Partition Evolution
+
+#### 1. Điểm yếu Partition Hive-style (cũ)
+
+Partition truyền thống phụ thuộc vào `cấu trúc thư mục vật lý`, nên khi thay đổi partition ⇒ bắt buộc rewrite toàn bộ table.
+
+---
+
+#### 2. Điểm mạnh Partition Iceberg
+
+* Partition (Iceberg) được theo dõi bằng `metadata`.
+* Khi đổi partition:
+  * Không rewrite data
+  * Chỉ tạo metadata file mới áp dụng partition plan mới.
+* Partition cũ **không bị xoá**; nếu cần vẫn có thể được metadata mới tham chiếu lại.
+* Partition chỉ **pruning ở mức file**:
+
+  * Iceberg kiểm tra file **có khả năng chứa value cần tìm hay không**
+  * Có ⇒ scan file đó
+  * Không ⇒ skip
+* Vì vậy thường kết hợp thêm **sort / z-order / compaction** ở mức datafile và table để tăng hiệu năng.
+
+---
+
+#### 3. Lưu ý
+* Khi thay đổi partition khác loại `(time/truncate/bucket)` thì cần drop partition cũ. Ngược lại chỉ cần add.
+
+```sql
+-- L1
+CREATE TABLE catalog.members (...) PARTITIONED BY years(registration_ts) USING iceberg;
+
+-- L2
+ALTER TABLE catalog.members ADD PARTITION FIELD months(registration_ts)
+
+-- L3
+ALTER TABLE catalog.members DROP PARTITION FIELD bucket(24, id);
+```
+
+* Khi thực hiện `compaction` sẽ áp dụng Partition Plan mới nhất. Nên add thêm option khi rewrite nếu muốn ngăn việc mặc định chọn Partition Plan mới nhất.
