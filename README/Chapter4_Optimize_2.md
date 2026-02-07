@@ -4,7 +4,9 @@
 ## 📖 Table of Contents
 1. [I. Metrics Collection](#i-metrics-collection)
 2. [II. Rewriting Manifests](#ii-rewriting-manifests)
-
+3. [III. Optimizing Storage](#iii-optimizing-storage)
+4. [IV. Write Distribution Mode](#iv-write-distribution-mode)
+5. [V. Bloom Filter](#v-bloom-filter)
 
 
 ## I. Metrics Collection
